@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fafafa">
+  <meta name="description" content="Ein kleines Dino-Spiel: springen, ducken und den eigenen Rekord knacken. Auch offline spielbar, mit Online-Highscores.">
+  <title>Dino Run – das Offline-Spiel</title>
+  <style>
+    :root { color-scheme: light; --paper: #fafafa; --ink: #535353; --muted: #767676; --line: #dedede; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100svh; background: var(--paper); color: var(--ink); font-family: Arial, Helvetica, sans-serif; }
+    main { width: min(960px, calc(100% - 48px)); margin: clamp(48px, 12vh, 128px) auto 40px; }
+    .eyebrow { margin: 0 0 20px; font: 11px/1.5 monospace; letter-spacing: .16em; text-transform: uppercase; }
+    .indicator { display: inline-block; width: 7px; height: 7px; margin-right: 9px; background: var(--ink); }
+    h1 { margin: 0 0 12px; font-size: clamp(28px, 5vw, 38px); font-weight: 600; letter-spacing: -.045em; }
+    .intro { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.7; }
+    .game { position: relative; margin-top: 24px; }
+    canvas { display: block; width: 100%; height: clamp(240px, 32vw, 310px); touch-action: none; image-rendering: pixelated; border-radius: 4px; }
+    canvas:focus-visible { outline: 2px solid var(--ink); outline-offset: 6px; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 12px; }
+    .buttons { display: flex; gap: 8px; }
+    button { min-height: 44px; padding: 0 17px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--ink); font: 13px Arial, sans-serif; cursor: pointer; touch-action: manipulation; }
+    button:hover { background: #ededed; }
+    button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+    button:disabled { opacity: .4; cursor: default; }
+    button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+    button.primary:hover { background: #383838; }
+    #duck { touch-action: none; user-select: none; -webkit-user-select: none; }
+    .hint { margin: 0; font: 11px/1.6 monospace; color: var(--muted); text-align: right; }
+    .highscores { margin-top: 32px; padding-top: 22px; border-top: 1px solid var(--line); }
+    .highscore-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .highscores h2 { margin: 0; font-size: 18px; }
+    .highscores table { width: 100%; margin-top: 16px; border-collapse: collapse; font: 14px/1.6 monospace; }
+    .highscores th, .highscores td { padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; }
+    .highscores th:last-child, .highscores td:last-child { text-align: right; }
+    .highscores th { color: var(--muted); font-weight: normal; }
+    .highscore-status { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .instructions { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 2; }
+    kbd { display: inline-block; min-width: 24px; padding: 0 5px; margin-right: 5px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px; color: var(--ink); text-align: center; font: 11px/22px monospace; }
+    footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 34px; font: 10px/1.7 monospace; letter-spacing: .04em; color: var(--muted); }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    @media (max-width: 560px) {
+      main { width: calc(100% - 32px); margin-top: 44px; }
+      .toolbar { align-items: flex-start; flex-direction: column; }
+      .buttons { width: 100%; }
+      button { padding-inline: 12px; flex: 1; }
+      .hint { text-align: left; }
+      .instructions { gap: 10px 20px; margin-top: 28px; }
+      footer { flex-direction: column; gap: 2px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow"><span class="indicator" aria-hidden="true"></span>Offline Arcade · 01</p>
+      <h1>Dino Run</h1>
+      <p class="intro">Kein Internet? Kein Problem.<br>Ein Dino, jede Menge Kakteen und dein nächster Rekord.</p>
+    </header>
+
+    <section class="game" aria-label="Dino-Spiel">
+      <canvas id="game" width="960" height="310" tabindex="0" aria-label="Dino Run. Leertaste oder Pfeil nach oben zum Springen, Pfeil nach unten zum Ducken, P für Pause." aria-describedby="controls">
+        Für dieses Spiel wird ein Browser mit HTML-Canvas und JavaScript benötigt.
+      </canvas>
+      <p id="status" class="sr-only" role="status" aria-live="polite">Bereit. Starte mit der Leertaste oder dem Startknopf.</p>
+      <div class="toolbar">
+        <div class="buttons">
+          <button id="action" class="primary" type="button">Spiel starten</button>
+          <button id="duck" type="button" aria-label="Gedrückt halten zum Ducken">Ducken ↓</button>
+          <button id="pause" type="button" disabled>Pause</button>
+        </div>
+        <p class="hint">Dein persönlicher Rekord bleibt auf diesem Gerät.</p>
+      </div>
+    </section>
+
+    <div id="controls" class="instructions">
+      <span><kbd>Leertaste</kbd> / <kbd>↑</kbd> Springen</span>
+      <span><kbd>↓</kbd> Ducken · schneller landen</span>
+      <span><kbd>P</kbd> Pause</span>
+      <span>Touch: Spielfeld antippen</span>
+    </div>
+    <section class="highscores" aria-labelledby="highscore-heading">
+      <div class="highscore-header">
+        <h2 id="highscore-heading">Highscores · Top 5</h2>
+        <button id="refresh-highscores" type="button">Aktualisieren</button>
+      </div>
+      <table aria-labelledby="highscore-heading">
+        <thead><tr><th scope="col">Platz</th><th scope="col">Punkte</th></tr></thead>
+        <tbody id="highscore-rows"><tr><td colspan="2">Highscores werden geladen …</td></tr></tbody>
+      </table>
+      <p id="highscore-status" class="highscore-status" role="status" aria-live="polite">Wird nach jeder Runde automatisch gespeichert.</p>
+    </section>
+    <footer><span>LAUFEN. SPRINGEN. NOCH MAL.</span><span>Offline spielbar · Highscores online.</span></footer>
+    <noscript><p>Bitte aktiviere JavaScript, um Dino Run zu spielen.</p></noscript>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const canvas = document.getElementById('game');
+      const ctx = canvas.getContext('2d');
+      const actionButton = document.getElementById('action');
+      const pauseButton = document.getElementById('pause');
+      const duckButton = document.getElementById('duck');
+      const status = document.getElementById('status');
+      const RECORD_KEY = 'dino-run-best-v1';
+      let best = 0;
+      try { best = Math.max(0, Number(localStorage.getItem(RECORD_KEY)) || 0); } catch { /* Spielen funktioniert auch ohne Speicherzugriff. */ }
+
+      let width = 960, height = 310, ground = 264;
+      let state = 'ready';
+      let distance = 0, elapsed = 0, speed = 330, spawnIn = 1.5, groundOffset = 0;
+      let obstacles = [], clouds = [], particles = [];
+      let lastTime = null, accumulator = 0, crashedAt = 0;
+      let duckKey = false, duckPointer = false;
+      const dino = { x: 52, jump: 0, velocity: 0, duck: false };
+      const STEP = 1 / 120;
+      const random = (min, max) => min + Math.random() * (max - min);
+      const score = () => Math.floor(distance / 13);
+
+      const highscoreRows = document.getElementById('highscore-rows');
+      const highscoreStatus = document.getElementById('highscore-status');
+      const refreshHighscoresButton = document.getElementById('refresh-highscores');
+      const pendingScores = [];
+      let highscoreQueue = Promise.resolve();
+      let highscoresLoaded = false;
+
+      function parseHighscores(data) {
+        if (!data || !Array.isArray(data.highscore) || !data.highscore.every(Number.isSafeInteger)) {
+          throw new Error('Ungültige Highscore-Antwort');
+        }
+        return [...data.highscore].sort((a, b) => b - a).slice(0, 5);
+      }
+
+      function showHighscores(scores) {
+        highscoreRows.replaceChildren();
+        highscoresLoaded = true;
+        if (!scores.length) {
+          const row = highscoreRows.insertRow();
+          const cell = row.insertCell();
+          cell.colSpan = 2;
+          cell.textContent = 'Noch keine Einträge.';
+          return;
+        }
+        scores.forEach((value, index) => {
+          const row = highscoreRows.insertRow();
+          row.insertCell().textContent = String(index + 1);
+          row.insertCell().textContent = value.toLocaleString('de-DE');
+        });
+      }
+
+      async function syncHighscores() {
+        refreshHighscoresButton.disabled = true;
+        highscoreStatus.textContent = pendingScores.length ? 'Highscore wird gespeichert …' : 'Highscores werden geladen …';
+        try {
+          const response = await fetch('/api/highscore', {
+            cache: 'no-store', signal: AbortSignal.timeout(10000)
+          });
+          if (!response.ok) throw new Error('Laden fehlgeschlagen');
+          const current = parseHighscores(await response.json());
+          showHighscores(current);
+          const pendingCount = pendingScores.length;
+          if (pendingCount) {
+            const highscore = [...current, ...pendingScores.slice(0, pendingCount)]
+              .sort((a, b) => b - a).slice(0, 5);
+            const saved = await fetch('/api/highscore', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ highscore }),
+              signal: AbortSignal.timeout(10000)
+            });
+            if (!saved.ok) throw new Error('Speichern fehlgeschlagen');
+            showHighscores(parseHighscores(await saved.json()));
+            pendingScores.splice(0, pendingCount);
+          }
+          highscoreStatus.textContent = 'Wird nach jeder Runde automatisch gespeichert.';
+        } catch {
+          highscoreStatus.textContent = pendingScores.length
+            ? 'Speichern fehlgeschlagen. Mit „Aktualisieren“ erneut versuchen.'
+            : 'Highscores konnten nicht geladen werden. Mit „Aktualisieren“ erneut versuchen.';
+          if (!highscoresLoaded) {
+            highscoreRows.rows[0].cells[0].textContent = 'Highscores nicht verfügbar.';
+          }
+        } finally {
+          refreshHighscoresButton.disabled = false;
+        }
+      }
+
+      function queueHighscoreSync() {
+        highscoreQueue = highscoreQueue.then(syncHighscores);
+      }
+
+      refreshHighscoresButton.addEventListener('click', queueHighscoreSync);
+      queueHighscoreSync();
+
+      const standingSprite = [
+        '             111111111 ',
+        '            11111111111',
+        '            11101111111',
+        '            11111111111',
+        '            11111111111',
+        '            11111111111',
+        '            111111     ',
+        '            111111111  ',
+        '1          11111      ',
+        '1         111111      ',
+        '11      1111111111    ',
+        '111   111111111  1    ',
+        '111111111111111       ',
+        '111111111111111       ',
+        ' 11111111111111       ',
+        '  111111111111        ',
+        '   1111111111         ',
+        '    11111111          ',
+        '     111 111          ',
+        '     11   11          ',
+        '     11   11          ',
+        '     111  111         '
+      ];
+      const duckSprite = [
+        '                      111111111 ',
+        '                     11111111111',
+        '                     11101111111',
+        '1                   111111111111',
+        '111      11111111111111111111111',
+        '11111111111111111111111111      ',
+        ' 11111111111111111111111111111  ',
+        '  111111111111111111111111      ',
+        '    11111111111111111111        ',
+        '       11111111111111          ',
+        '        111     111            ',
+        '        11       11            ',
+        '        111      111           '
+      ];
+
+      function setStatus(message) { status.textContent = message; }
+
+      function resize() {
+        const rect = canvas.getBoundingClientRect();
+        width = rect.width;
+        height = rect.height;
+        ground = height - 46;
+        dino.x = width < 560 ? 34 : 52;
+        const ratio = Math.min(window.devicePixelRatio || 1, 3);
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(height * ratio);
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        if (!clouds.length) clouds = Array.from({ length: 4 }, (_, i) => ({ x: width * (i + .4) / 4, y: random(58, 106) }));
+        render();
+      }
+
+      function syncButtons() {
+        actionButton.textContent = state === 'ready' ? 'Spiel starten' : state === 'dead' ? 'Neu starten' : state === 'paused' ? 'Weiterlaufen' : 'Springen ↑';
+        pauseButton.disabled = state === 'ready' || state === 'dead';
+        pauseButton.textContent = state === 'paused' ? 'Weiter' : 'Pause';
+      }
+
+      function start() {
+        distance = 0; elapsed = 0; speed = 330; spawnIn = 1.5; groundOffset = 0;
+        obstacles = []; particles = [];
+        dino.jump = 0; dino.velocity = 0; dino.duck = false;
+        duckKey = false; duckPointer = false;
+        state = 'running'; accumulator = 0; lastTime = null;
+        syncButtons();
+        setStatus('Los geht’s! Springe über die Kakteen und ducke dich unter Vögeln.');
+      }
+
+      function jump() {
+        if (state === 'dead' && performance.now() - crashedAt < 450) return;
+        if (state === 'ready' || state === 'dead') start();
+        if (state === 'paused') { togglePause(); return; }
+        if (dino.jump === 0 && !duckKey && !duckPointer) {
+          dino.duck = false;
+          dino.velocity = 690;
+          dino.jump = .1;
+        }
+      }
+
+      function releaseJump() {
+        if (dino.velocity > 450) dino.velocity = 450;
+      }
+
+      function togglePause() {
+        if (state !== 'running' && state !== 'paused') return;
+        state = state === 'running' ? 'paused' : 'running';
+        duckKey = false; duckPointer = false;
+        lastTime = null; accumulator = 0;
+        syncButtons();
+        setStatus(state === 'paused' ? 'Spiel pausiert. Mit P oder Weiter fortsetzen.' : 'Weiter geht’s!');
+        render();
+      }
+
+      function crash() {
+        state = 'dead'; crashedAt = performance.now();
+        const result = score();
+        pendingScores.push(result);
+        queueHighscoreSync();
+        if (result > best) {
+          best = result;
+          try { localStorage.setItem(RECORD_KEY, String(best)); } catch { /* Speicher kann gesperrt sein. */ }
+        }
+        syncButtons();
+        setStatus(`Spiel vorbei. ${result} Punkte. Rekord: ${best}. Starte mit der Leertaste oder Neu starten.`);
+      }
+
+      function spawnObstacle() {
+        if (score() > 140 && Math.random() < .25) {
+          const altitude = [30, 48, 86][Math.floor(Math.random() * 3)];
+          obstacles.push({ type: 'bird', x: width + 24, y: ground - altitude, w: 44, h: 24 });
+        } else {
+          const tall = Math.random() > .5;
+          const count = Math.random() < .3 ? (score() > 100 && Math.random() < .4 ? 3 : 2) : 1;
+          const unit = tall ? 24 : 19;
+          obstacles.push({ type: 'cactus', x: width + 24, y: ground - (tall ? 47 : 34), w: count * unit, h: tall ? 47 : 34, count, unit });
+        }
+        // Ein vollständiger Sprung und eine Reaktionspause passen zwischen zwei Hindernisse.
+        spawnIn = random(1.05, 1.65) + 70 / speed;
+      }
+
+      function dinoBoxes() {
+        if (dino.duck) return [{ x: dino.x + 8, y: ground - 22, w: 38, h: 18 }, { x: dino.x + 44, y: ground - 25, w: 17, h: 15 }];
+        const y = ground - 44 - dino.jump;
+        return [{ x: dino.x + 25, y: y + 2, w: 17, h: 15 }, { x: dino.x + 10, y: y + 17, w: 23, h: 19 }, { x: dino.x + 12, y: y + 34, w: 15, h: 8 }];
+      }
+
+      function obstacleBoxes(obstacle) {
+        if (obstacle.type === 'bird') return [{ x: obstacle.x + 5, y: obstacle.y + 6, w: 34, h: 12 }];
+        return Array.from({ length: obstacle.count }, (_, i) => ({ x: obstacle.x + i * obstacle.unit + 3, y: obstacle.y + 3, w: obstacle.unit - 6, h: obstacle.h - 3 }));
+      }
+
+      function overlaps(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+      function update(dt) {
+        elapsed += dt;
+        speed = Math.min(700, 330 + Math.floor(elapsed / 30) * 50);
+        distance += speed * dt;
+        groundOffset = (groundOffset + speed * dt) % 80;
+        dino.duck = (duckKey || duckPointer) && dino.jump === 0;
+        if (dino.jump > 0) {
+          dino.velocity -= (duckKey || duckPointer ? 3900 : 2050) * dt;
+          dino.jump += dino.velocity * dt;
+          if (dino.jump <= 0) {
+            dino.jump = 0; dino.velocity = 0;
+            particles.push({ x: dino.x + 10, y: ground - 2, life: .3 });
+          }
+        }
+        spawnIn -= dt;
+        if (spawnIn <= 0) spawnObstacle();
+        for (const obstacle of obstacles) obstacle.x -= (speed + (obstacle.type === 'bird' ? 35 : 0)) * dt;
+        obstacles = obstacles.filter(obstacle => obstacle.x + obstacle.w > -30);
+        for (const cloud of clouds) {
+          cloud.x -= speed * .07 * dt;
+          if (cloud.x < -60) { cloud.x = width + random(20, 100); cloud.y = random(58, 106); }
+        }
+        for (const particle of particles) { particle.x -= speed * .5 * dt; particle.life -= dt; }
+        particles = particles.filter(particle => particle.life > 0);
+        const boxes = dinoBoxes();
+        if (obstacles.some(obstacle => obstacleBoxes(obstacle).some(box => boxes.some(dinoBox => overlaps(dinoBox, box))))) crash();
+      }
+
+      function rect(x, y, w, h) { ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); }
+
+      function drawDino() {
+        const sprite = dino.duck ? duckSprite : standingSprite;
+        const y = ground - sprite.length * 2 - dino.jump;
+        const frame = Math.floor(elapsed * 12) % 2;
+        sprite.forEach((row, rowIndex) => {
+          for (let column = 0; column < row.length; column++) {
+            if (row[column] !== '1') continue;
+            const leg = rowIndex >= sprite.length - 3;
+            const lifted = state === 'running' && dino.jump === 0 && leg && ((frame === 0 && column < 10) || (frame === 1 && column >= 10));
+            if (!lifted) rect(dino.x + column * 2, y + rowIndex * 2, 2, 2);
+          }
+        });
+        if (state === 'dead') {
+          ctx.fillStyle = palette().background;
+          const eyeX = dino.x + (dino.duck ? 49 : 29);
+          rect(eyeX, y + 4, 7, 7);
+          ctx.fillStyle = palette().ink;
+          rect(eyeX, y + 4, 2, 2); rect(eyeX + 4, y + 4, 2, 2);
+          rect(eyeX + 2, y + 6, 2, 2);
+          rect(eyeX, y + 8, 2, 2); rect(eyeX + 4, y + 8, 2, 2);
+        }
+      }
+
+      function drawCactus(obstacle) {
+        for (let i = 0; i < obstacle.count; i++) {
+          const x = obstacle.x + i * obstacle.unit;
+          const y = obstacle.y + (i % 2 ? 5 : 0);
+          const h = obstacle.h - (i % 2 ? 5 : 0);
+          const mid = Math.floor(obstacle.unit / 2);
+          rect(x + mid - 3, y, 6, h);
+          rect(x + mid - 2, y - 2, 4, 2);
+          rect(x + 1, y + 11, 4, h * .42);
+          rect(x + 4, y + h * .55, mid - 3, 4);
+          rect(x + obstacle.unit - 5, y + 7, 4, h * .42);
+          rect(x + mid + 3, y + h * .46, mid - 4, 4);
+        }
+      }
+
+      function drawBird(obstacle) {
+        const { x, y } = obstacle;
+        rect(x, y + 10, 9, 3); rect(x + 7, y + 5, 10, 13);
+        rect(x + 15, y + 11, 22, 9); rect(x + 35, y + 11, 9, 3);
+        if (Math.floor(elapsed * 7) % 2 === 0) {
+          rect(x + 20, y - 7, 5, 20); rect(x + 25, y - 3, 5, 17);
+        } else {
+          rect(x + 20, y + 17, 6, 14); rect(x + 26, y + 18, 5, 8);
+        }
+        ctx.fillStyle = palette().background;
+        rect(x + 9, y + 7, 2, 2);
+        ctx.fillStyle = palette().ink;
+      }
+
+      function palette() {
+        const night = score() >= 300 && Math.floor(score() / 300) % 2 === 1;
+        return night ? { background: '#202124', ink: '#dedede', light: '#73767b' } : { background: '#fafafa', ink: '#535353', light: '#c9c9c9' };
+      }
+
+      function render() {
+        const colors = palette();
+        ctx.fillStyle = colors.background; ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = colors.light;
+        for (const cloud of clouds) {
+          rect(cloud.x, cloud.y + 10, 46, 2); rect(cloud.x + 7, cloud.y + 4, 2, 6);
+          rect(cloud.x + 9, cloud.y + 3, 10, 2); rect(cloud.x + 19, cloud.y - 2, 12, 2);
+          rect(cloud.x + 30, cloud.y, 2, 5); rect(cloud.x + 32, cloud.y + 4, 9, 2); rect(cloud.x + 41, cloud.y + 5, 2, 5);
+        }
+        if (colors.background === '#202124') {
+          ctx.fillStyle = colors.ink; rect(width - 120, 66, 15, 22);
+          ctx.fillStyle = colors.background; rect(width - 114, 62, 13, 19);
+          ctx.fillStyle = colors.light;
+          for (let i = 0; i < 7; i++) rect((i * 137 + 24) % width, 48 + (i * 19) % 62, 2, 2);
+        }
+        ctx.fillStyle = colors.ink;
+        rect(0, ground, width, 1);
+        for (let x = -80; x < width + 80; x += 80) {
+          rect(x - groundOffset + 12, ground + 7, 12, 1);
+          rect(x - groundOffset + 53, ground + 15, 4, 1);
+          rect(x - groundOffset + 70, ground + 4, 2, 1);
+        }
+        for (const obstacle of obstacles) obstacle.type === 'bird' ? drawBird(obstacle) : drawCactus(obstacle);
+        ctx.fillStyle = colors.light;
+        for (const particle of particles) { rect(particle.x, particle.y, 3, 2); rect(particle.x - 7, particle.y - 4, 2, 2); }
+        ctx.fillStyle = colors.ink;
+        drawDino();
+        ctx.textBaseline = 'top'; ctx.textAlign = 'right'; ctx.font = 'bold 15px monospace';
+        ctx.fillText(String(score()).padStart(5, '0'), width - 12, 16);
+        ctx.fillStyle = colors.light;
+        ctx.fillText('HI ' + String(Math.max(best, score())).padStart(5, '0'), width - 85, 16);
+        if (state !== 'running') {
+          ctx.textAlign = 'center'; ctx.fillStyle = colors.ink;
+          ctx.font = 'bold 17px monospace';
+          const title = state === 'ready' ? 'BEREIT FÜR EINE RUNDE?' : state === 'paused' ? 'PAUSE' : 'GAME OVER';
+          ctx.fillText(title, width / 2, 91);
+          ctx.font = '12px monospace';
+          ctx.fillText(state === 'ready' ? 'Leertaste drücken oder tippen' : state === 'paused' ? 'P drücken oder tippen zum Fortsetzen' : 'Leertaste oder tippen: noch einmal', width / 2, 121);
+          if (state === 'dead') {
+            const x = width / 2 - 12, y = 153;
+            rect(x, y, 24, 22);
+            ctx.fillStyle = colors.background;
+            rect(x + 6, y + 7, 12, 3); rect(x + 6, y + 7, 3, 9); rect(x + 8, y + 14, 9, 3);
+            rect(x + 4, y + 5, 3, 7);
+          }
+        }
+      }
+
+      function frame(now) {
+        if (lastTime === null) lastTime = now;
+        const dt = Math.min((now - lastTime) / 1000, .05);
+        lastTime = now;
+        if (state === 'running') {
+          accumulator += dt;
+          while (accumulator >= STEP && state === 'running') { update(STEP); accumulator -= STEP; }
+          render();
+        }
+        requestAnimationFrame(frame);
+      }
+
+      const jumpCodes = ['Space', 'ArrowUp'];
+      window.addEventListener('keydown', event => {
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        const onButton = event.target instanceof Element && event.target.closest('button');
+        if ((event.code === 'Space' || event.code === 'Enter') && onButton) return;
+        if ([...jumpCodes, 'ArrowDown', 'KeyP', 'Escape', 'Enter'].includes(event.code)) event.preventDefault();
+        if (event.repeat) return;
+        if (jumpCodes.includes(event.code) || (event.code === 'Enter' && (state === 'ready' || state === 'dead'))) {
+          jump();
+        } else if (event.code === 'ArrowDown') duckKey = true;
+        else if (event.code === 'KeyP' || event.code === 'Escape') togglePause();
+      });
+      window.addEventListener('keyup', event => {
+        if (jumpCodes.includes(event.code)) releaseJump();
+        if (event.code === 'ArrowDown') duckKey = false;
+      });
+      canvas.addEventListener('pointerdown', event => {
+        event.preventDefault(); canvas.focus({ preventScroll: true });
+        canvas.setPointerCapture(event.pointerId); jump();
+      });
+      canvas.addEventListener('pointerup', releaseJump);
+      canvas.addEventListener('pointercancel', releaseJump);
+      actionButton.addEventListener('click', () => {
+        jump();
+        // Nach einem Klick greifen Leertaste und Pfeile direkt im Spielfeld.
+        canvas.focus({ preventScroll: true });
+      });
+      pauseButton.addEventListener('click', togglePause);
+      duckButton.addEventListener('pointerdown', event => {
+        event.preventDefault(); duckPointer = true;
+        duckButton.setPointerCapture(event.pointerId);
+      });
+      for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) duckButton.addEventListener(name, () => { duckPointer = false; });
+      duckButton.addEventListener('keydown', event => {
+        if (event.code === 'Space' || event.code === 'Enter') { event.preventDefault(); duckPointer = true; }
+      });
+      duckButton.addEventListener('keyup', event => {
+        if (event.code === 'Space' || event.code === 'Enter') duckPointer = false;
+      });
+      function pauseOnLeave() {
+        duckKey = false; duckPointer = false; releaseJump();
+        if (state === 'running') togglePause();
+      }
+      window.addEventListener('blur', pauseOnLeave);
+      document.addEventListener('visibilitychange', () => { if (document.hidden) pauseOnLeave(); });
+      window.addEventListener('resize', () => { if (state === 'running') togglePause(); resize(); });
+      resize();
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>
