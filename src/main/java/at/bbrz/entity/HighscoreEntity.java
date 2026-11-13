@@ -5,5 +5,6 @@ import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
 @Table("HIGHSCORE")
-public record HighscoreEntity(@Id Long id, @Column("SCORE_ORDER") int position, long score) {
+public record HighscoreEntity(@Id Long id, @Column("SCORE_ORDER") int position,
+                              @Column("PLAYER_NAME") String playerName, long score) {
 }

@@ -31,6 +31,9 @@
     .highscores { margin-top: 32px; padding-top: 22px; border-top: 1px solid var(--line); }
     .highscore-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
     .highscores h2 { margin: 0; font-size: 18px; }
+    .player-name { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; font-size: 14px; }
+    .player-name input { width: min(100%, 260px); padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--ink); font: inherit; }
+    .highscores td:nth-child(2) { overflow-wrap: anywhere; }
     .highscores table { width: 100%; margin-top: 16px; border-collapse: collapse; font: 14px/1.6 monospace; }
     .highscores th, .highscores td { padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; }
     .highscores th:last-child, .highscores td:last-child { text-align: right; }
@@ -85,9 +88,14 @@
         <h2 id="highscore-heading">Highscores · Top 5</h2>
         <button id="refresh-highscores" type="button">Aktualisieren</button>
       </div>
+      <div class="player-name">
+        <label for="player-name">Spielername</label>
+        <input id="player-name" type="text" maxlength="40" placeholder="Dein Name" autocomplete="nickname" aria-describedby="player-name-hint">
+        <span id="player-name-hint">Ohne Namen spielst du als „Gast“.</span>
+      </div>
       <table aria-labelledby="highscore-heading">
-        <thead><tr><th scope="col">Platz</th><th scope="col">Punkte</th></tr></thead>
-        <tbody id="highscore-rows"><tr><td colspan="2">Highscores werden geladen …</td></tr></tbody>
+        <thead><tr><th scope="col">Platz</th><th scope="col">Spielername</th><th scope="col">Punkte</th></tr></thead>
+        <tbody id="highscore-rows"><tr><td colspan="3">Highscores werden geladen …</td></tr></tbody>
       </table>
       <p id="highscore-status" class="highscore-status" role="status" aria-live="polite">Wird nach jeder Runde automatisch gespeichert.</p>
     </section>
@@ -106,6 +114,14 @@
       const duckButton = document.getElementById('duck');
       const status = document.getElementById('status');
       const RECORD_KEY = 'dino-run-best-v1';
+      const PLAYER_NAME_KEY = 'dino-run-player-name-v1';
+      const playerNameInput = document.getElementById('player-name');
+      const playerName = () => playerNameInput.value.trim().slice(0, 40) || 'Gast';
+      let roundPlayerName = playerName();
+      try { playerNameInput.value = (localStorage.getItem(PLAYER_NAME_KEY) || '').slice(0, 40); } catch { /* Spielen funktioniert auch ohne Speicherzugriff. */ }
+      playerNameInput.addEventListener('input', () => {
+        try { localStorage.setItem(PLAYER_NAME_KEY, playerNameInput.value); } catch { /* Speicher kann gesperrt sein. */ }
+      });
       let best = 0;
       try { best = Math.max(0, Number(localStorage.getItem(RECORD_KEY)) || 0); } catch { /* Spielen funktioniert auch ohne Speicherzugriff. */ }
 
@@ -128,10 +144,12 @@
       let highscoresLoaded = false;
 
       function parseHighscores(data) {
-        if (!data || !Array.isArray(data.highscore) || !data.highscore.every(Number.isSafeInteger)) {
+        if (!data || !Array.isArray(data.highscores) || !data.highscores.every(entry =>
+          entry && typeof entry.playerName === 'string' && entry.playerName.trim().length > 0
+          && entry.playerName.length <= 40 && Number.isSafeInteger(entry.score) && entry.score >= 0)) {
           throw new Error('Ungültige Highscore-Antwort');
         }
-        return [...data.highscore].sort((a, b) => b - a).slice(0, 5);
+        return [...data.highscores].sort((a, b) => b.score - a.score).slice(0, 5);
       }
 
       function showHighscores(scores) {
@@ -140,14 +158,15 @@
         if (!scores.length) {
           const row = highscoreRows.insertRow();
           const cell = row.insertCell();
-          cell.colSpan = 2;
+          cell.colSpan = 3;
           cell.textContent = 'Noch keine Einträge.';
           return;
         }
-        scores.forEach((value, index) => {
+        scores.forEach((entry, index) => {
           const row = highscoreRows.insertRow();
           row.insertCell().textContent = String(index + 1);
-          row.insertCell().textContent = value.toLocaleString('de-DE');
+          row.insertCell().textContent = entry.playerName;
+          row.insertCell().textContent = entry.score.toLocaleString('de-DE');
         });
       }
 
@@ -163,12 +182,12 @@
           showHighscores(current);
           const pendingCount = pendingScores.length;
           if (pendingCount) {
-            const highscore = [...current, ...pendingScores.slice(0, pendingCount)]
-              .sort((a, b) => b - a).slice(0, 5);
+            const highscores = [...current, ...pendingScores.slice(0, pendingCount)]
+              .sort((a, b) => b.score - a.score).slice(0, 5);
             const saved = await fetch('/api/highscore', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ highscore }),
+              body: JSON.stringify({ highscores }),
               signal: AbortSignal.timeout(10000)
             });
             if (!saved.ok) throw new Error('Speichern fehlgeschlagen');
@@ -259,6 +278,7 @@
       }
 
       function start() {
+        roundPlayerName = playerName();
         distance = 0; elapsed = 0; speed = 330; spawnIn = 1.5; groundOffset = 0;
         obstacles = []; particles = [];
         dino.jump = 0; dino.velocity = 0; dino.duck = false;
@@ -296,7 +316,7 @@
       function crash() {
         state = 'dead'; crashedAt = performance.now();
         const result = score();
-        pendingScores.push(result);
+        pendingScores.push({ playerName: roundPlayerName, score: result });
         queueHighscoreSync();
         if (result > best) {
           best = result;
@@ -483,6 +503,7 @@
       const jumpCodes = ['Space', 'ArrowUp'];
       window.addEventListener('keydown', event => {
         if (event.ctrlKey || event.metaKey || event.altKey) return;
+        if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]')) return;
         const onButton = event.target instanceof Element && event.target.closest('button');
         if ((event.code === 'Space' || event.code === 'Enter') && onButton) return;
         if ([...jumpCodes, 'ArrowDown', 'KeyP', 'Escape', 'Enter'].includes(event.code)) event.preventDefault();

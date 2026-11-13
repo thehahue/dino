@@ -23,6 +23,10 @@ public class HighscoreController {
         return highscoreService.getHighscore();
     }
 
+    /*
+     {"highscores":[{"playerName":"Alex","score":2000},{...}]}
+     */
+
     @PostMapping("/highscore")
     public HighscoreResponse saveHighscore(@RequestBody HighscoreResponse highscore) {
         return highscoreService.saveHighscore(highscore);
